@@ -119,10 +119,9 @@
     }
 
     startButton.addEventListener('click', startCamera);
-
-window.addEventListener('load', function () {
-  startCamera();
-});
+    window.addEventListener('load', function () {
+       startCamera();
+    });
     stopButton.addEventListener("click", stopCamera);
 
     window.addEventListener("pagehide", stopCamera);
