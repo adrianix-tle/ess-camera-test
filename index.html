@@ -1,0 +1,127 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ESS Standalone Camera Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 650px;
+      margin: 30px auto;
+      padding: 20px;
+      line-height: 1.5;
+      background: #f5f7fa;
+      color: #222;
+    }
+    h2 { color: #174ea6; }
+    video {
+      display: block;
+      width: 100%;
+      min-height: 240px;
+      background: #111;
+      border-radius: 8px;
+      margin: 16px 0;
+    }
+    button {
+      padding: 12px 18px;
+      margin: 4px;
+      cursor: pointer;
+    }
+    #status {
+      padding: 12px;
+      background: white;
+      border: 1px solid #ccc;
+      overflow-wrap: anywhere;
+    }
+  </style>
+</head>
+<body>
+  <h2>ESS Standalone Camera Test</h2>
+  <p>This test displays your camera only.
+     It does not record or upload video.</p>
+
+  <p id="environment">Checking browser...</p>
+  <div id="status" role="status" aria-live="polite">
+    Ready.
+  </div>
+
+  <button id="start">Start Camera</button>
+  <button id="stop" disabled>Stop Camera</button>
+
+  <video id="preview" autoplay playsinline muted></video>
+
+  <script>
+    "use strict";
+
+    const status = document.getElementById("status");
+    const preview = document.getElementById("preview");
+    const startButton = document.getElementById("start");
+    const stopButton = document.getElementById("stop");
+
+    let stream = null;
+
+    document.getElementById("environment").textContent =
+      "Secure context: " + window.isSecureContext +
+      " | Camera API: " +
+      Boolean(navigator.mediaDevices?.getUserMedia);
+
+    function stopCamera() {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        stream = null;
+      }
+
+      preview.srcObject = null;
+      startButton.disabled = false;
+      stopButton.disabled = true;
+      status.textContent = "Camera stopped.";
+    }
+
+    async function startCamera() {
+      startButton.disabled = true;
+      status.textContent = "Requesting camera permission...";
+
+      try {
+        if (!window.isSecureContext) {
+          throw new Error("Open this page through HTTPS.");
+        }
+
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error("Camera API is unavailable.");
+        }
+
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: { facingMode: "user" }
+        });
+
+        preview.srcObject = stream;
+        await preview.play();
+
+        stopButton.disabled = false;
+        status.textContent = "SUCCESS: Camera started.";
+      } catch (error) {
+        if (stream) {
+          stream.getTracks().forEach(track => track.stop());
+          stream = null;
+        }
+
+        preview.srcObject = null;
+        startButton.disabled = false;
+
+        status.textContent =
+          "FAILED: " + error.name + ": " + error.message;
+
+        console.error("ESS camera test:", error);
+      }
+    }
+
+    startButton.addEventListener("click", startCamera);
+    stopButton.addEventListener("click", stopCamera);
+
+    window.addEventListener("pagehide", stopCamera);
+  </script>
+</body>
+</html>
