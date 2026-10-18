@@ -4,127 +4,111 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ESS Standalone Camera Test</title>
+  <title>ESS Campus QR Scanner</title>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <style>
     body {
       font-family: Arial, sans-serif;
-      max-width: 650px;
-      margin: 30px auto;
-      padding: 20px;
+      max-width: 600px;
+      margin: 20px auto;
+      padding: 16px;
       line-height: 1.5;
-      background: #f5f7fa;
-      color: #222;
-    }
-    h2 { color: #174ea6; }
-    video {
-      display: block;
-      width: 100%;
-      min-height: 240px;
-      background: #111;
-      border-radius: 8px;
-      margin: 16px 0;
     }
     button {
-      padding: 12px 18px;
-      margin: 4px;
+      padding: 12px 16px;
+      margin: 6px 4px 6px 0;
       cursor: pointer;
     }
+    #reader {
+      width: 100%;
+      margin-top: 16px;
+    }
     #status {
+      background: #f1f1f1;
       padding: 12px;
-      background: white;
-      border: 1px solid #ccc;
       overflow-wrap: anywhere;
     }
   </style>
 </head>
 <body>
-  <h2>ESS Standalone Camera Test</h2>
-  <p>This test displays your camera only.
-     It does not record or upload video.</p>
+  <h2>ESS Campus QR Scanner</h2>
+  <p>Scan a Pass Slip QR code to read its contents.</p>
+  <p id="status" role="status">Ready to scan.</p>
 
-  <p id="environment">Checking browser...</p>
-  <div id="status" role="status" aria-live="polite">
-    Ready.
-  </div>
+  <button id="start" type="button">Start QR Scanner</button>
+  <button id="stop" type="button" disabled>Stop Scanner</button>
 
-  <button id="start">Start Camera</button>
-  <button id="stop" disabled>Stop Camera</button>
+  <div id="reader"></div>
 
-  <video id="preview" autoplay playsinline muted></video>
+  <h3>Scanned QR content</h3>
+  <pre id="result" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
 
   <script>
-    "use strict";
+    const statusEl = document.getElementById('status');
+    const resultEl = document.getElementById('result');
+    const startBtn = document.getElementById('start');
+    const stopBtn = document.getElementById('stop');
 
-    const status = document.getElementById("status");
-    const preview = document.getElementById("preview");
-    const startButton = document.getElementById("start");
-    const stopButton = document.getElementById("stop");
+    let scanner = null;
+    let starting = false;
+    let lastText = '';
 
-    let stream = null;
+    startBtn.addEventListener('click', async function () {
+      if (starting || scanner) return;
 
-    document.getElementById("environment").textContent =
-      "Secure context: " + window.isSecureContext +
-      " | Camera API: " +
-      Boolean(navigator.mediaDevices?.getUserMedia);
-
-    function stopCamera() {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-        stream = null;
-      }
-
-      preview.srcObject = null;
-      startButton.disabled = false;
-      stopButton.disabled = true;
-      status.textContent = "Camera stopped.";
-    }
-
-    async function startCamera() {
-      startButton.disabled = true;
-      status.textContent = "Requesting camera permission...";
+      starting = true;
+      startBtn.disabled = true;
+      statusEl.textContent = 'Requesting camera permission...';
 
       try {
-        if (!window.isSecureContext) {
-          throw new Error("Open this page through HTTPS.");
-        }
+        scanner = new Html5Qrcode('reader');
 
-        if (!navigator.mediaDevices?.getUserMedia) {
-          throw new Error("Camera API is unavailable.");
-        }
+        await scanner.start(
+          { facingMode: 'environment' },
+          { fps: 10, qrbox: { width: 220, height: 220 } },
+          function (decodedText) {
+            if (decodedText === lastText) return;
+            lastText = decodedText;
+            resultEl.textContent = decodedText;
+            statusEl.textContent = 'QR code read successfully.';
+          },
+          function () {
+            // Ignore frames where no QR code is detected.
+          }
+        );
 
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: false,
-          video: { facingMode: "user" }
-        });
-
-        preview.srcObject = stream;
-        await preview.play();
-
-        stopButton.disabled = false;
-        status.textContent = "SUCCESS: Camera started.";
+        stopBtn.disabled = false;
+        statusEl.textContent = 'Camera running. Point it at a QR code.';
       } catch (error) {
-        if (stream) {
-          stream.getTracks().forEach(track => track.stop());
-          stream = null;
+        statusEl.textContent = 'Could not start scanner: ' +
+          (error.message || String(error));
+
+        if (scanner) {
+          try { await scanner.clear(); } catch (_) {}
+          scanner = null;
         }
 
-        preview.srcObject = null;
-        startButton.disabled = false;
-
-        status.textContent =
-          "FAILED: " + error.name + ": " + error.message;
-
-        console.error("ESS camera test:", error);
+        startBtn.disabled = false;
+      } finally {
+        starting = false;
       }
-    }
-
-    startButton.addEventListener('click', startCamera);
-    window.addEventListener('load', function () {
-       startCamera();
     });
-    stopButton.addEventListener("click", stopCamera);
 
-    window.addEventListener("pagehide", stopCamera);
+    stopBtn.addEventListener('click', async function () {
+      if (!scanner) return;
+
+      stopBtn.disabled = true;
+      try {
+        await scanner.stop();
+        await scanner.clear();
+        scanner = null;
+        startBtn.disabled = false;
+        statusEl.textContent = 'Scanner stopped.';
+      } catch (error) {
+        statusEl.textContent = 'Could not stop scanner: ' +
+          (error.message || String(error));
+      }
+    });
   </script>
 </body>
 </html>
