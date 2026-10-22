@@ -43,72 +43,140 @@
   <h3>Scanned QR content</h3>
   <pre id="result" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
 
-  <script>
-    const statusEl = document.getElementById('status');
-    const resultEl = document.getElementById('result');
-    const startBtn = document.getElementById('start');
-    const stopBtn = document.getElementById('stop');
+  
+<script>
+  "use strict";
 
-    let scanner = null;
-    let starting = false;
-    let lastText = '';
+  const status = document.getElementById("status");
+  const resultEl = document.getElementById("result");
+  const startButton = document.getElementById("start");
+  const stopButton = document.getElementById("stop");
+  const reader = document.getElementById("reader");
+  const environment = document.getElementById("environment");
 
-    startBtn.addEventListener('click', async function () {
-      if (starting || scanner) return;
+  let scanner = null;
+  let starting = false;
+  let lastText = "";
 
-      starting = true;
-      startBtn.disabled = true;
-      statusEl.textContent = 'Requesting camera permission...';
+  if (environment) {
+    environment.textContent =
+      "Secure context: " + window.isSecureContext +
+      " | Camera API: " +
+      Boolean(navigator.mediaDevices?.getUserMedia);
+  }
 
-      try {
-        scanner = new Html5Qrcode('reader');
+  function showStatus(message) {
+    if (status) status.textContent = message;
+  }
 
-        await scanner.start(
-          { facingMode: 'environment' },
-          { fps: 10, qrbox: { width: 220, height: 220 } },
-          function (decodedText) {
-            if (decodedText === lastText) return;
-            lastText = decodedText;
-            resultEl.textContent = decodedText;
-            statusEl.textContent = 'QR code read successfully.';
-          },
-          function () {
-            // Ignore frames where no QR code is detected.
-          }
-        );
+  async function startCamera() {
+    if (starting || scanner) return;
 
-        stopBtn.disabled = false;
-        statusEl.textContent = 'Camera running. Point it at a QR code.';
-      } catch (error) {
-        statusEl.textContent = 'Could not start scanner: ' +
-          (error.message || String(error));
+    if (!window.isSecureContext) {
+      showStatus("Please open the scanner using HTTPS.");
+      return;
+    }
 
-        if (scanner) {
-          try { await scanner.clear(); } catch (_) {}
-          scanner = null;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      showStatus("Camera API unavailable. Open this page in Chrome using HTTPS.");
+      return;
+    }
+
+    if (typeof Html5Qrcode === "undefined") {
+      showStatus("Scanner library not loaded. Check the Html5Qrcode script.");
+      return;
+    }
+
+    starting = true;
+    startButton.disabled = true;
+    showStatus("Requesting camera permission...");
+
+    const instance = new Html5Qrcode("reader");
+    scanner = instance;
+
+    try {
+      await instance.start(
+        { facingMode: "environment" },
+        {
+          fps: 10,
+          qrbox: { width: 220, height: 220 }
+        },
+        function (decodedText) {
+          if (decodedText === lastText) return;
+
+          lastText = decodedText;
+
+          if (resultEl) resultEl.textContent = decodedText;
+          showStatus("QR code read successfully.");
+        },
+        function () {
+          // Ignore frames without a detected QR code.
         }
+      );
 
-        startBtn.disabled = false;
-      } finally {
-        starting = false;
-      }
-    });
-
-    stopBtn.addEventListener('click', async function () {
-      if (!scanner) return;
-
-      stopBtn.disabled = true;
+      stopButton.disabled = false;
+      showStatus("Camera running. Point it at a QR code.");
+    } catch (error) {
       try {
-        await scanner.stop();
-        await scanner.clear();
-        scanner = null;
-        startBtn.disabled = false;
-        statusEl.textContent = 'Scanner stopped.';
-      } catch (error) {
-        statusEl.textContent = 'Could not stop scanner: ' +
-          (error.message || String(error));
+        await instance.clear();
+      } catch (_) {
+        // Ignore cleanup errors.
       }
-    });
-  </script>
+
+      if (scanner === instance) scanner = null;
+
+      startButton.disabled = false;
+      stopButton.disabled = true;
+
+      if (error.name === "NotAllowedError") {
+        showStatus(
+          "Camera permission denied. Allow camera access in Chrome settings and retry."
+        );
+      } else {
+        showStatus(
+          "Could not start scanner: " +
+          (error.message || String(error))
+        );
+      }
+
+      console.error("ESS camera start error:", error);
+    } finally {
+      starting = false;
+    }
+  }
+
+  async function stopCamera() {
+    if (starting || !scanner) return;
+
+    const instance = scanner;
+    scanner = null;
+    stopButton.disabled = true;
+    showStatus("Stopping camera...");
+
+    try {
+      await instance.stop();
+    } catch (error) {
+      console.warn("Scanner stop warning:", error);
+    }
+
+    try {
+      await instance.clear();
+    } catch (error) {
+      console.warn("Scanner cleanup warning:", error);
+    }
+
+    startButton.disabled = false;
+    showStatus("Camera stopped.");
+  }
+
+  startButton.addEventListener("click", startCamera);
+  stopButton.addEventListener("click", stopCamera);
+
+  window.addEventListener("pagehide", function () {
+    if (scanner) {
+      scanner.stop().catch(function () {});
+    }
+  });
+</script>
 </body>
 </html>
