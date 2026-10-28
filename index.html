@@ -102,13 +102,27 @@
           qrbox: { width: 220, height: 220 }
         },
         function (decodedText) {
-          if (decodedText === lastText) return;
+  if (decodedText === lastText) return;
 
-          lastText = decodedText;
+  lastText = decodedText;
 
-          if (resultEl) resultEl.textContent = decodedText;
-          showStatus("QR code read successfully.");
-        },
+  if (resultEl) {
+    resultEl.textContent = decodedText;
+  }
+
+  showStatus("QR code read successfully.");
+
+  // Send the scanned QR text to the ESS Dashboard.
+  if (window.parent !== window) {
+    window.parent.postMessage(
+      {
+        type: "ESS_QR_SCANNED",
+        text: decodedText
+      },
+      "*"
+    );
+  }
+},
         function () {
           // Ignore frames without a detected QR code.
         }
