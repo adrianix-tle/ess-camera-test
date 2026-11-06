@@ -45,152 +45,185 @@
 
   
 <script>
-  "use strict";
+  
+"use strict";
 
-  const status = document.getElementById("status");
-  const resultEl = document.getElementById("result");
-  const startButton = document.getElementById("start");
-  const stopButton = document.getElementById("stop");
-  const reader = document.getElementById("reader");
-  const environment = document.getElementById("environment");
+const status = document.getElementById("status");
+const resultEl = document.getElementById("result");
+const startButton = document.getElementById("start");
+const stopButton = document.getElementById("stop");
 
-  let scanner = null;
-  let starting = false;
-  let lastText = "";
+// Read ESS authorization and selected gate from the URL fragment.
+const essParams = new URLSearchParams(window.location.hash.substring(1));
+const essToken = essParams.get("essToken") || "";
+const selectedGate = essParams.get("gate") || "";
 
-  if (environment) {
-    environment.textContent =
-      "Secure context: " + window.isSecureContext +
-      " | Camera API: " +
-      Boolean(navigator.mediaDevices?.getUserMedia);
+let scanner = null;
+let starting = false;
+let lastText = "";
+
+function showStatus(message) {
+  if (status) status.textContent = message;
+}
+
+// Check whether this scanner was opened from ESS.
+const openedFromESS =
+  Boolean(window.opener && !window.opener.closed);
+
+if (!essToken || !selectedGate || !openedFromESS) {
+  showStatus(
+    "Scanner opened without a complete ESS session. " +
+    "Please launch it using the ESS Dashboard."
+  );
+} else {
+  showStatus("ESS session connected. Ready to scan.");
+}
+
+async function startCamera() {
+  if (starting || scanner) return;
+
+  if (!window.isSecureContext) {
+    showStatus("Please open the scanner using HTTPS.");
+    return;
   }
 
-  function showStatus(message) {
-    if (status) status.textContent = message;
-  }
-
-  async function startCamera() {
-    if (starting || scanner) return;
-
-    if (!window.isSecureContext) {
-      showStatus("Please open the scanner using HTTPS.");
-      return;
-    }
-
-    if (!navigator.mediaDevices?.getUserMedia) {
-      showStatus("Camera API unavailable. Open this page in Chrome using HTTPS.");
-      return;
-    }
-
-    if (typeof Html5Qrcode === "undefined") {
-      showStatus("Scanner library not loaded. Check the Html5Qrcode script.");
-      return;
-    }
-
-    starting = true;
-    startButton.disabled = true;
-    showStatus("Requesting camera permission...");
-
-    const instance = new Html5Qrcode("reader");
-    scanner = instance;
-
-    try {
-      await instance.start(
-        { facingMode: "user" },
-        {
-          fps: 10,
-          qrbox: { width: 220, height: 220 }
-        },
-        function (decodedText) {
-  if (decodedText === lastText) return;
-
-  lastText = decodedText;
-
-  if (resultEl) {
-    resultEl.textContent = decodedText;
-  }
-
-  showStatus("QR code read successfully.");
-
-  // Send the scanned QR text to the ESS Dashboard.
-  if (window.parent !== window) {
-    window.parent.postMessage(
-      {
-        type: "ESS_QR_SCANNED",
-        text: decodedText
-      },
-      "*"
+  if (!navigator.mediaDevices?.getUserMedia) {
+    showStatus(
+      "Camera API unavailable. Open this page in Chrome using HTTPS."
     );
+    return;
   }
-},
-        function () {
-          // Ignore frames without a detected QR code.
+
+  if (typeof Html5Qrcode === "undefined") {
+    showStatus("Scanner library not loaded. Check the Html5Qrcode script.");
+    return;
+  }
+
+  starting = true;
+  startButton.disabled = true;
+  showStatus("Requesting camera permission...");
+
+  const instance = new Html5Qrcode("reader");
+  scanner = instance;
+
+  try {
+    await instance.start(
+      { facingMode: "user" },
+      {
+        fps: 10,
+        qrbox: { width: 220, height: 220 }
+      },
+      function (decodedText) {
+        if (decodedText === lastText) return;
+
+        lastText = decodedText;
+
+        if (resultEl) {
+          resultEl.textContent = decodedText;
         }
-      );
 
-      stopButton.disabled = false;
+        // Send the QR result to the ESS Dashboard tab.
+        if (
+          window.opener &&
+          !window.opener.closed &&
+          essToken &&
+          selectedGate
+        ) {
+          window.opener.postMessage(
+            {
+              type: "ESS_QR_SCANNED",
+              text: decodedText,
+              essToken: essToken,
+              gate: selectedGate
+            },
+            "*"
+          );
+
+          showStatus("QR scanned. Result sent to ESS Dashboard.");
+        } else {
+          showStatus(
+            "QR read, but ESS connection is missing. " +
+            "Please reopen the scanner from ESS."
+          );
+        }
+      },
+      function () {
+        // Ignore frames without a detected QR code.
+      }
+    );
+
+    stopButton.disabled = false;
+
+    if (essToken && selectedGate && openedFromESS) {
       showStatus("Camera running. Point it at a QR code.");
-    } catch (error) {
-      try {
-        await instance.clear();
-      } catch (_) {
-        // Ignore cleanup errors.
-      }
-
-      if (scanner === instance) scanner = null;
-
-      startButton.disabled = false;
-      stopButton.disabled = true;
-
-      if (error.name === "NotAllowedError") {
-        showStatus(
-          "Camera permission denied. Allow camera access in Chrome settings and retry."
-        );
-      } else {
-        showStatus(
-          "Could not start scanner: " +
-          (error.message || String(error))
-        );
-      }
-
-      console.error("ESS camera start error:", error);
-    } finally {
-      starting = false;
-    }
-  }
-
-  async function stopCamera() {
-    if (starting || !scanner) return;
-
-    const instance = scanner;
-    scanner = null;
-    stopButton.disabled = true;
-    showStatus("Stopping camera...");
-
-    try {
-      await instance.stop();
-    } catch (error) {
-      console.warn("Scanner stop warning:", error);
+    } else {
+      showStatus("Camera running, but no ESS session is connected.");
     }
 
+  } catch (error) {
     try {
       await instance.clear();
-    } catch (error) {
-      console.warn("Scanner cleanup warning:", error);
+    } catch (_) {
+      // Ignore cleanup errors.
     }
+
+    if (scanner === instance) scanner = null;
 
     startButton.disabled = false;
-    showStatus("Camera stopped.");
+    stopButton.disabled = true;
+
+    if (error.name === "NotAllowedError") {
+      showStatus(
+        "Camera permission denied. Allow camera access in Chrome settings and retry."
+      );
+    } else {
+      showStatus(
+        "Could not start scanner: " +
+        (error.message || String(error))
+      );
+    }
+
+    console.error("ESS camera start error:", error);
+
+  } finally {
+    starting = false;
+  }
+}
+
+async function stopCamera() {
+  if (starting || !scanner) return;
+
+  const instance = scanner;
+  scanner = null;
+
+  stopButton.disabled = true;
+  showStatus("Stopping camera...");
+
+  try {
+    await instance.stop();
+  } catch (error) {
+    console.warn("Scanner stop warning:", error);
   }
 
-  startButton.addEventListener("click", startCamera);
-  stopButton.addEventListener("click", stopCamera);
+  try {
+    await instance.clear();
+  } catch (error) {
+    console.warn("Scanner cleanup warning:", error);
+  }
 
-  window.addEventListener("pagehide", function () {
-    if (scanner) {
-      scanner.stop().catch(function () {});
-    }
-  });
+  startButton.disabled = false;
+  showStatus("Camera stopped.");
+}
+
+startButton.addEventListener("click", startCamera);
+stopButton.addEventListener("click", stopCamera);
+
+window.addEventListener("pagehide", function () {
+  if (scanner) {
+    scanner.stop().catch(function () {});
+  }
+});
+
 </script>
 </body>
 </html>
