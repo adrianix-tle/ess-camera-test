@@ -138,7 +138,13 @@ async function startCamera() {
             },
             "*"
           );
+// Close scanner and return to ESS Dashboard.
+showStatus("QR scanned successfully. Returning to ESS...");
 
+setTimeout(function () {
+  window.close();
+}, 1000);
+          
           showStatus("QR scanned. Result sent to ESS Dashboard.");
         } else {
           showStatus(
